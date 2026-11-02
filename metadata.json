@@ -1,0 +1,8 @@
+{
+  "name": "ብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - የቻፕሎች መረጃ ቋት",
+  "description": "ብርብር ከተማ ቃለ ሕይወት ቤተክርስቲያን - የአስሩ ቻፕሎች አባላት ቆጠራ፣ ቤተሰቦች፣ የመንፈሳዊ ዘርፍ እና የ2019 ዓ.ም ስትራቴጂካዊ ዕቅድ መቆጣጠሪያ ሥርዓት።",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
