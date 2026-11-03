@@ -562,6 +562,7 @@ export default function ChurchCensusPage() {
         {activeTab === 'spiritual' && (
           <SpiritualMinistryView
             members={chapelMembers}
+            allMembers={members}
             households={chapelHouseholds}
             lang={lang}
             selectedChapel={selectedChapel}

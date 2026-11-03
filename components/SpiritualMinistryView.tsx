@@ -16,6 +16,7 @@ import {
   Copy,
   Check,
   User,
+  Users,
   Filter,
   PlusCircle,
   ExternalLink,
@@ -23,6 +24,11 @@ import {
   Layers,
   ArrowRight,
   Sparkles,
+  BarChart2,
+  Building2,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { MemberRecord, Household, ChapelId } from '../lib/types';
 import { Language, TRANSLATIONS } from '../lib/translations';
@@ -31,6 +37,7 @@ import SpiritualPlanView from './SpiritualPlanView';
 
 interface SpiritualMinistryViewProps {
   members: MemberRecord[];
+  allMembers?: MemberRecord[];
   households?: Household[];
   lang: Language;
   selectedChapel: ChapelId;
@@ -52,6 +59,7 @@ export type MinistrySectorId =
 
 export default function SpiritualMinistryView({
   members,
+  allMembers = [],
   households = [],
   lang,
   selectedChapel,
@@ -64,6 +72,8 @@ export default function SpiritualMinistryView({
   const [activeSector, setActiveSector] = useState<MinistrySectorId>('all');
   const [search, setSearch] = useState('');
   const [educationFilter, setEducationFilter] = useState<string>('all');
+  const [ageBracketFilter, setAgeBracketFilter] = useState<'all' | '0-14' | '15-29' | '30-59' | '60+' | 'unspecified'>('all');
+  const [showAgeMatrixTable, setShowAgeMatrixTable] = useState<boolean>(true);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   // Quick edit modal state
@@ -244,7 +254,96 @@ export default function SpiritualMinistryView({
     return counts;
   }, [members, sectors]);
 
-  // Filter members based on activeSector, search, education
+  // Compute age distribution matrix across all 10 chapels (0-14, 15-29, 30-59, 60+, unspecified)
+  const chapelAgeMatrix = useMemo(() => {
+    const sourceMembers = allMembers && allMembers.length > 0 ? allMembers : members;
+
+    return CHAPELS.filter(c => c.id !== 'all').map(c => {
+      const chapM = sourceMembers.filter(m => m.chapel.toLowerCase() === c.id.toLowerCase());
+
+      let age0_14 = 0;
+      let age15_29 = 0;
+      let age30_59 = 0;
+      let age60Plus = 0;
+      let unspecified = 0;
+
+      chapM.forEach(m => {
+        if (m.age === null || isNaN(m.age)) {
+          unspecified++;
+        } else if (m.age <= 14) {
+          age0_14++;
+        } else if (m.age <= 29) {
+          age15_29++;
+        } else if (m.age <= 59) {
+          age30_59++;
+        } else {
+          age60Plus++;
+        }
+      });
+
+      return {
+        id: c.id as ChapelId,
+        nameAmharic: c.nameAmharic,
+        nameEnglish: c.nameEnglish,
+        color: c.color,
+        total: chapM.length,
+        age0_14,
+        age15_29,
+        age30_59,
+        age60Plus,
+        unspecified,
+      };
+    });
+  }, [allMembers, members]);
+
+  // Compute grand totals across all chapels for the age matrix
+  const grandAgeTotals = useMemo(() => {
+    return chapelAgeMatrix.reduce(
+      (acc, row) => ({
+        total: acc.total + row.total,
+        age0_14: acc.age0_14 + row.age0_14,
+        age15_29: acc.age15_29 + row.age15_29,
+        age30_59: acc.age30_59 + row.age30_59,
+        age60Plus: acc.age60Plus + row.age60Plus,
+        unspecified: acc.unspecified + row.unspecified,
+      }),
+      { total: 0, age0_14: 0, age15_29: 0, age30_59: 0, age60Plus: 0, unspecified: 0 }
+    );
+  }, [chapelAgeMatrix]);
+
+  // Compute active chapel age stats
+  const activeChapelAgeStats = useMemo(() => {
+    let age0_14 = 0;
+    let age15_29 = 0;
+    let age30_59 = 0;
+    let age60Plus = 0;
+    let unspecified = 0;
+
+    members.forEach(m => {
+      if (m.age === null || isNaN(m.age)) {
+        unspecified++;
+      } else if (m.age <= 14) {
+        age0_14++;
+      } else if (m.age <= 29) {
+        age15_29++;
+      } else if (m.age <= 59) {
+        age30_59++;
+      } else {
+        age60Plus++;
+      }
+    });
+
+    return {
+      total: members.length,
+      age0_14,
+      age15_29,
+      age30_59,
+      age60Plus,
+      unspecified,
+    };
+  }, [members]);
+
+  // Filter members based on activeSector, search, education, ageBracketFilter
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
       // Sector filter
@@ -275,9 +374,18 @@ export default function SpiritualMinistryView({
         if (educationFilter === 'emmaus' && !spEdu.includes('ኤማሆስ') && !spEdu.includes('emmaus')) return false;
       }
 
+      // Age bracket filter
+      if (ageBracketFilter !== 'all') {
+        if (ageBracketFilter === 'unspecified' && m.age !== null) return false;
+        if (ageBracketFilter === '0-14' && (m.age === null || m.age < 0 || m.age > 14)) return false;
+        if (ageBracketFilter === '15-29' && (m.age === null || m.age < 15 || m.age > 29)) return false;
+        if (ageBracketFilter === '30-59' && (m.age === null || m.age < 30 || m.age > 59)) return false;
+        if (ageBracketFilter === '60+' && (m.age === null || m.age < 60)) return false;
+      }
+
       return true;
     });
-  }, [members, activeSector, sectors, search, educationFilter]);
+  }, [members, activeSector, sectors, search, educationFilter, ageBracketFilter]);
 
   const handleCopyPhone = (e: React.MouseEvent, phone: string) => {
     e.stopPropagation();
@@ -411,7 +519,323 @@ export default function SpiritualMinistryView({
         />
       ) : (
         <>
-          {/* The 8 Spiritual Sectors Grid Cards */}
+          {/* 1. Age Group Demographics Banner & Interactive Cards */}
+          <div className="bg-gradient-to-br from-amber-500/10 via-slate-900/5 to-teal-500/10 dark:from-slate-900 dark:to-slate-900 p-5 rounded-2xl border border-amber-200 dark:border-amber-900/40 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
+                    {lang === 'am'
+                      ? 'የቻፕሎች የዕድሜ ክልል እስታትስቲክስ (0-14፣ 15-29፣ 30-59፣ 60+)'
+                      : 'Chapel Age Group Demographics (0-14, 15-29, 30-59, 60+)'}
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {lang === 'am'
+                    ? `${selectedChapel === 'all' ? 'በሁሉም ቻፕሎች' : currentChapelInfo.nameAmharic} ውስጥ ያሉ አባላት በዕድሜ ክልል የተከፋፈሉበት ስታቲስቲክስ`
+                    : `Age bracket distribution for ${selectedChapel === 'all' ? 'All Chapels' : currentChapelInfo.nameEnglish}`}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAgeMatrixTable(!showAgeMatrixTable)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 hover:bg-amber-200 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <BarChart2 className="w-4 h-4" />
+                  <span>
+                    {showAgeMatrixTable
+                      ? (lang === 'am' ? 'የ10ሩ ቻፕሎች ሰንጠረዥ ደብቅ' : 'Hide 10-Chapel Matrix')
+                      : (lang === 'am' ? 'የ10ሩ ቻፕሎች ሰንጠረዥ አሳይ' : 'Show 10-Chapel Matrix')}
+                  </span>
+                  {showAgeMatrixTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Interactive Age Group Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {/* Card 1: 0 - 14 yrs */}
+              <div
+                onClick={() => setAgeBracketFilter(ageBracketFilter === '0-14' ? 'all' : '0-14')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  ageBracketFilter === '0-14'
+                    ? 'ring-2 ring-amber-500 bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-md'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-300 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 mb-1">
+                    <span className="text-xs font-extrabold uppercase">{lang === 'am' ? 'ህፃናት' : 'Children'}</span>
+                    <span className="text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.5 rounded text-amber-800 dark:text-amber-200">
+                      0 - 14
+                    </span>
+                  </div>
+                  <div className="text-xl font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
+                    {activeChapelAgeStats.age0_14}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>
+                    {activeChapelAgeStats.total > 0
+                      ? Math.round((activeChapelAgeStats.age0_14 / activeChapelAgeStats.total) * 100)
+                      : 0}% {lang === 'am' ? 'የጉባኤው' : 'of flock'}
+                  </span>
+                  <span className="text-amber-600 font-bold">
+                    {ageBracketFilter === '0-14' ? (lang === 'am' ? 'ተመርጧል' : 'Active') : (lang === 'am' ? 'ለይ' : 'Filter')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2: 15 - 29 yrs */}
+              <div
+                onClick={() => setAgeBracketFilter(ageBracketFilter === '15-29' ? 'all' : '15-29')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  ageBracketFilter === '15-29'
+                    ? 'ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-600 shadow-md'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400 mb-1">
+                    <span className="text-xs font-extrabold uppercase">{lang === 'am' ? 'ወጣቶች' : 'Youth'}</span>
+                    <span className="text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded text-indigo-800 dark:text-indigo-200">
+                      15 - 29
+                    </span>
+                  </div>
+                  <div className="text-xl font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
+                    {activeChapelAgeStats.age15_29}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>
+                    {activeChapelAgeStats.total > 0
+                      ? Math.round((activeChapelAgeStats.age15_29 / activeChapelAgeStats.total) * 100)
+                      : 0}% {lang === 'am' ? 'የጉባኤው' : 'of flock'}
+                  </span>
+                  <span className="text-indigo-600 font-bold">
+                    {ageBracketFilter === '15-29' ? (lang === 'am' ? 'ተመርጧል' : 'Active') : (lang === 'am' ? 'ለይ' : 'Filter')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 3: 30 - 59 yrs */}
+              <div
+                onClick={() => setAgeBracketFilter(ageBracketFilter === '30-59' ? 'all' : '30-59')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  ageBracketFilter === '30-59'
+                    ? 'ring-2 ring-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600 shadow-md'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 mb-1">
+                    <span className="text-xs font-extrabold uppercase">{lang === 'am' ? 'ጎልማሶች' : 'Adults'}</span>
+                    <span className="text-[10px] font-mono font-bold bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-800 dark:text-emerald-200">
+                      30 - 59
+                    </span>
+                  </div>
+                  <div className="text-xl font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
+                    {activeChapelAgeStats.age30_59}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>
+                    {activeChapelAgeStats.total > 0
+                      ? Math.round((activeChapelAgeStats.age30_59 / activeChapelAgeStats.total) * 100)
+                      : 0}% {lang === 'am' ? 'የጉባኤው' : 'of flock'}
+                  </span>
+                  <span className="text-emerald-600 font-bold">
+                    {ageBracketFilter === '30-59' ? (lang === 'am' ? 'ተመርጧል' : 'Active') : (lang === 'am' ? 'ለይ' : 'Filter')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 4: 60+ yrs */}
+              <div
+                onClick={() => setAgeBracketFilter(ageBracketFilter === '60+' ? 'all' : '60+')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  ageBracketFilter === '60+'
+                    ? 'ring-2 ring-rose-500 bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-600 shadow-md'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-300 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-rose-600 dark:text-rose-400 mb-1">
+                    <span className="text-xs font-extrabold uppercase">{lang === 'am' ? 'አረጋውያን' : 'Seniors'}</span>
+                    <span className="text-[10px] font-mono font-bold bg-rose-100 dark:bg-rose-900/60 px-1.5 py-0.5 rounded text-rose-800 dark:text-rose-200">
+                      60+
+                    </span>
+                  </div>
+                  <div className="text-xl font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
+                    {activeChapelAgeStats.age60Plus}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>
+                    {activeChapelAgeStats.total > 0
+                      ? Math.round((activeChapelAgeStats.age60Plus / activeChapelAgeStats.total) * 100)
+                      : 0}% {lang === 'am' ? 'የጉባኤው' : 'of flock'}
+                  </span>
+                  <span className="text-rose-600 font-bold">
+                    {ageBracketFilter === '60+' ? (lang === 'am' ? 'ተመርጧል' : 'Active') : (lang === 'am' ? 'ለይ' : 'Filter')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 5: Unspecified */}
+              <div
+                onClick={() => setAgeBracketFilter(ageBracketFilter === 'unspecified' ? 'all' : 'unspecified')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  ageBracketFilter === 'unspecified'
+                    ? 'ring-2 ring-slate-500 bg-slate-100 dark:bg-slate-800 border-slate-400 shadow-md'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
+                    <span className="text-xs font-extrabold uppercase">{lang === 'am' ? 'ያልተጠቀሰ' : 'Unspecified'}</span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                      N/A
+                    </span>
+                  </div>
+                  <div className="text-xl font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
+                    {activeChapelAgeStats.unspecified}
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>
+                    {activeChapelAgeStats.total > 0
+                      ? Math.round((activeChapelAgeStats.unspecified / activeChapelAgeStats.total) * 100)
+                      : 0}% {lang === 'am' ? 'የጉባኤው' : 'of flock'}
+                  </span>
+                  <span className="text-slate-600 font-bold">
+                    {ageBracketFilter === 'unspecified' ? (lang === 'am' ? 'ተመርጧል' : 'Active') : (lang === 'am' ? 'ለይ' : 'Filter')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 10-Chapel Side-by-Side Comparison Table */}
+            {showAgeMatrixTable && (
+              <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>{lang === 'am' ? 'የ10ሩ ቻፕሎች የዕድሜ ክልል ዝርዝር እስታትስቲክስ ማጠቃለያ' : '10-Chapel Age Bracket Demographics Breakdown Table'}</span>
+                  </h3>
+                  <span className="text-[11px] text-slate-500">
+                    {lang === 'am' ? 'ማንኛውንም ቻፕል በመንካት ቀጥታ ወደ ቻፕሉ መግባት ይችላሉ' : 'Click any chapel row to filter to that chapel'}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-3">#</th>
+                        <th className="py-2.5 px-4">{lang === 'am' ? 'የቻፕሉ ስም (Chapel)' : 'Chapel Name'}</th>
+                        <th className="py-2.5 px-3 text-center bg-amber-50/50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200">
+                          0 - 14 {lang === 'am' ? 'ዓመት (ህፃናት)' : 'yrs'}
+                        </th>
+                        <th className="py-2.5 px-3 text-center bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-900 dark:text-indigo-200">
+                          15 - 29 {lang === 'am' ? 'ዓመት (ወጣቶች)' : 'yrs'}
+                        </th>
+                        <th className="py-2.5 px-3 text-center bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200">
+                          30 - 59 {lang === 'am' ? 'ዓመት (ጎልማሶች)' : 'yrs'}
+                        </th>
+                        <th className="py-2.5 px-3 text-center bg-rose-50/50 dark:bg-rose-950/20 text-rose-900 dark:text-rose-200">
+                          60+ {lang === 'am' ? 'ዓመት (አረጋውያን)' : 'yrs'}
+                        </th>
+                        <th className="py-2.5 px-3 text-center text-slate-500">
+                          {lang === 'am' ? 'ያልተጠቀሰ' : 'Unspecified'}
+                        </th>
+                        <th className="py-2.5 px-4 text-center font-extrabold text-slate-900 dark:text-white">
+                          {lang === 'am' ? 'ጠቅላላ ድምር' : 'Total'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                      {chapelAgeMatrix.map((row, idx) => {
+                        const isCurrent = selectedChapel === row.id;
+
+                        return (
+                          <tr
+                            key={row.id}
+                            onClick={() => onSwitchChapel && onSwitchChapel(row.id)}
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer ${
+                              isCurrent ? 'bg-amber-50/40 dark:bg-amber-950/20 font-semibold' : ''
+                            }`}
+                          >
+                            <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                            <td className="py-2 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                                style={{ backgroundColor: row.color }}
+                              />
+                              <span>{lang === 'am' ? row.nameAmharic : row.nameEnglish}</span>
+                              {isCurrent && (
+                                <span className="text-[10px] bg-teal-100 text-teal-800 dark:bg-teal-900/60 dark:text-teal-200 px-1.5 py-0.2 rounded">
+                                  {lang === 'am' ? 'የተመረጠ' : 'Active'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-amber-800 dark:text-amber-300 font-bold bg-amber-50/30 dark:bg-amber-950/10">
+                              {row.age0_14}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-indigo-800 dark:text-indigo-300 font-bold bg-indigo-50/30 dark:bg-indigo-950/10">
+                              {row.age15_29}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-emerald-800 dark:text-emerald-300 font-bold bg-emerald-50/30 dark:bg-emerald-950/10">
+                              {row.age30_59}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-rose-800 dark:text-rose-300 font-bold bg-rose-50/30 dark:bg-rose-950/10">
+                              {row.age60Plus}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-slate-400">
+                              {row.unspecified}
+                            </td>
+                            <td className="py-2 px-4 text-center font-mono font-extrabold text-slate-900 dark:text-white">
+                              {row.total}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-100 dark:bg-slate-800/90 font-extrabold text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-700">
+                      <tr>
+                        <td colSpan={2} className="py-2.5 px-4 text-right">
+                          {lang === 'am' ? 'የሁሉንም ቻፕሎች ጠቅላላ ድምር (Grand Total)፦' : 'Grand Total across all Chapels:'}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-mono text-amber-700 dark:text-amber-300 text-sm">
+                          {grandAgeTotals.age0_14}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-mono text-indigo-700 dark:text-indigo-300 text-sm">
+                          {grandAgeTotals.age15_29}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-mono text-emerald-700 dark:text-emerald-300 text-sm">
+                          {grandAgeTotals.age30_59}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-mono text-rose-700 dark:text-rose-300 text-sm">
+                          {grandAgeTotals.age60Plus}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                          {grandAgeTotals.unspecified}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-teal-700 dark:text-teal-400 text-sm">
+                          {grandAgeTotals.total}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. The 8 Spiritual Sectors Grid Cards */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -504,6 +928,22 @@ export default function SpiritualMinistryView({
 
           <div className="flex items-center gap-2 overflow-x-auto">
             <span className="text-xs text-slate-500 shrink-0 font-medium">
+              {lang === 'am' ? 'የዕድሜ ክልል፦' : 'Age Bracket:'}
+            </span>
+            <select
+              value={ageBracketFilter}
+              onChange={e => setAgeBracketFilter(e.target.value as any)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:outline-hidden"
+            >
+              <option value="all">{lang === 'am' ? 'ሁሉም ዕድሜዎች' : 'All Ages'}</option>
+              <option value="0-14">{lang === 'am' ? 'ከ0 - 14 ዓመት (ህፃናት)' : '0 - 14 yrs'}</option>
+              <option value="15-29">{lang === 'am' ? 'ከ15 - 29 ዓመት (ወጣቶች)' : '15 - 29 yrs'}</option>
+              <option value="30-59">{lang === 'am' ? 'ከ30 - 59 ዓመት (ጎልማሶች)' : '30 - 59 yrs'}</option>
+              <option value="60+">{lang === 'am' ? 'ከ60 ዓመት በላይ (አረጋውያን)' : '60+ yrs'}</option>
+              <option value="unspecified">{lang === 'am' ? 'ዕድሜ ያልተጠቀሰ' : 'Unspecified'}</option>
+            </select>
+
+            <span className="text-xs text-slate-500 shrink-0 font-medium">
               {lang === 'am' ? 'መንፈሳዊ ትምህርት፦' : 'Spiritual Edu:'}
             </span>
             <select
@@ -518,11 +958,12 @@ export default function SpiritualMinistryView({
               <option value="emmaus">ኤማሆስ (Emmaus)</option>
             </select>
 
-            {(search || educationFilter !== 'all' || activeSector !== 'all') && (
+            {(search || educationFilter !== 'all' || ageBracketFilter !== 'all' || activeSector !== 'all') && (
               <button
                 onClick={() => {
                   setSearch('');
                   setEducationFilter('all');
+                  setAgeBracketFilter('all');
                   setActiveSector('all');
                 }}
                 className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-red-600 transition-colors shrink-0"
